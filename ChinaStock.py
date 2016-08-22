@@ -96,6 +96,7 @@ def main():
 	filePattern = None
 	redisServer = None	
 	dtFullWriteFlag = None
+	dtPartialWriteFlag = None
 	redisSubThread = None
 
 	#創建log目錄
@@ -179,13 +180,13 @@ def main():
 				dicRead = collections.OrderedDict(sorted(dicRead.items()))
 				writeDBF(filePattern, writeFileName, dicRead)
 
-			if dtFullWriteFlag != None:
+			if dtPartialWriteFlag != None:
 				dtNow = datetime.datetime.now()
-				deltaSeconds = (dtNow - dtFullWriteFlag).seconds * 1000 * 1000
-				deltaMicroSeconds = (dtNow - dtFullWriteFlag).microseconds + deltaSeconds
+				deltaSeconds = (dtNow - dtPartialWriteFlag).seconds * 1000 * 1000
+				deltaMicroSeconds = (dtNow - dtPartialWriteFlag).microseconds + deltaSeconds
 			#約200ms進行一次DBF更新
-			if dtFullWriteFlag == None or deltaMicroSeconds > 200 * 1000:
-				dtFullWriteFlag = datetime.datetime.now()
+			if dtPartialWriteFlag == None or deltaMicroSeconds > 200 * 1000:
+				dtPartialWriteFlag = datetime.datetime.now()
 				queue = redisSubThread.getQueue()
 				if len(queue) > 0:
 					logger.info("DBF partial update")
@@ -254,11 +255,16 @@ def writeDBF(filePattern, fullFilePath, dicInput):
 			dbfFileHandle = dbf.Table(fullFilePath, codepage="utf8")
 		else:
 			if filePattern == "0": #show2003.dbf
-				dbfFileHandle = dbf.Table(fullFilePath, "S1 C(6); S2 C(18); S3 N(10,3); S4 N(10,3); S5 N(12,0); S6 N(12,0); "
-					"S7 N(10,3); S8 N(10,3); S9 N(10,3); S10 N(10,3); S11 N(10,0); S13 N(10,3); S15 N(10,0); S16 N(10,3); "
-					"S17 N(10,0); S18 N(10,3); S19 N(10,0); S21 N(10,0); S22 N(10,3); S23 N(10,0); S24 N(10,3); S25 N(10,0); "
-					"S26 N(10,3); S27 N(10,0); S28 N(10,3); S29 N(10,0); S30 N(10,3); S31 N(10,0); S32 N(10,3); S33 N(10,0)"
-					, codepage="utf8")
+				# dbfFileHandle = dbf.Table(fullFilePath, "S1 C(6); S2 C(18); S3 N(8,3); S4 N(8,3); S5 N(12,0); S6 N(8,3); "
+				# 	"S7 N(8,3); S8 N(8,3); S9 N(8,3); S10 N(8,3); S11 N(10,0); S13 N(8,3); S15 N(10,0); S16 N(8,3); "
+				# 	"S17 N(10,0); S18 N(8,3); S19 N(10,0); S21 N(10,0); S22 N(8,3); S23 N(10,0); S24 N(8,3); S25 N(10,0); "
+				# 	"S26 N(8,3); S27 N(10,0); S28 N(8,3); S29 N(10,0); S30 N(8,3); S31 N(10,0); S32 N(8,3); S33 N(10,0)"
+				# 	, codepage="utf8");
+				dbfFileHandle = dbf.Table(fullFilePath, "S1 C(6); S2 C(16); S3 N(9,3); S4 N(9,3); S5 N(12,0); S6 N(12,3); "
+					"S7 N(9,3); S8 N(9,3); S9 N(9,3); S10 N(9,3); S11 N(10,0); S13 N(9,3); S15 N(10,0); S16 N(9,3); "
+					"S17 N(10,0); S18 N(9,3); S19 N(10,0); S21 N(10,0); S22 N(9,3); S23 N(10,0); S24 N(9,3); S25 N(10,0); "
+					"S26 N(9,3); S27 N(10,0); S28 N(9,3); S29 N(10,0); S30 N(9,3); S31 N(10,0); S32 N(9,3); S33 N(10,0)"
+					, codepage="utf8");
 			elif filePattern == "1": #sjshq.dbf
 				dbfFileHandle = dbf.Table(fullFilePath, "HQZQDM C(6); HQZQJC C(18); HQZRSP N(9,3); HQJRKP N(9,3); HQZJCJ N(9,3); "
 					"HQCJSL N(12,0); HQCJJE N(17,3); HQCJBS N(9,0); HQZGCJ N(9,3); HQZDCJ N(9,3); HQSYL1 N(7,2); HQSYL2 N(7,2); "
@@ -280,8 +286,13 @@ def writeDBF(filePattern, fullFilePath, dicInput):
 		# print datetime.datetime.now(), "input len2 = ", len(dicInput)
 		for key, value in dicInput.iteritems():
 			# print key, value
+
 			if value == None:
 				continue
+
+			# if key == "000000":
+			# 	continue;
+
 			vList = value.split("##")
 			vListLen = len(vList)
 			if filePattern == "0":
@@ -297,6 +308,7 @@ def writeDBF(filePattern, fullFilePath, dicInput):
 			if len(match) == 0:
 				insertCount += 1
 				vList[0] = vList[0].decode("utf8")
+				# vList[0] = vList[0].strip();
 				vList.insert(0, key)
 
 				if filePattern == "0":
@@ -308,11 +320,33 @@ def writeDBF(filePattern, fullFilePath, dicInput):
 						# del vList[-1]
 						vList[35, -1] = []
 
+				#如DBF中S6欄位定義為N(9,3)時，則需要將"000000"此筆的S6欄位特殊處理
+				# if key == "000000":
+				# 	vList[5] = vList[5].split(".")[0];
+				# 	vList[5] = vList[5][:5]+ "." + vList[5][5:];
+				# 	print(vList);
+
+				# if filePattern == "0":
 				dbfFileHandle.append(tuple(vList))
+				# if filePattern == "0":
+				# 	dicTmp = {"S1": vList[0], "S2":vList[1], "S3":vList[2], "S4":vList[3], "S5":vList[4], 
+				# 		"S6":vList[5], "S7":vList[6], "S8":vList[7], "S9":vList[8], "S10":vList[9], "S11":vList[10], 
+				# 		"S13":vList[11], "S15":vList[12], "S16":vList[13], "S17":vList[14], "S18":vList[15], 
+				# 		"S19":vList[16], "S21":vList[17], "S22":vList[18], "S23":vList[19], "S24":vList[20], 
+				# 		"S25":vList[21], "S26":vList[22], "S27":vList[23], "S28":vList[24], "S29":vList[25], 
+				# 		"S30":vList[26], "S31":vList[27], "S32":vList[28], "S33":vList[29]};
+				# 	print(dicTmp);
+				# 	dbfFileHandle.append(dicTmp);
+
 			else:
 				updateCount += 1
 				with match[0] as rec:
 					if filePattern == "0":
+						#如DBF中S6欄位定義為N(9,3)時，則需要將"000000"此筆的S6欄位特殊處理
+						# if key == "000000":
+						# 	vList[4] = vList[4].split(".")[0];
+						# 	vList[4] = vList[4][:5]+ "." + vList[4][5:];
+
 						rec.s2 = vList[0].decode("utf8")
 						#rec.s2 = vList[0]
 						rec.s3 = vList[1]; rec.s4 = vList[2]; rec.s5 = vList[3];
@@ -329,7 +363,7 @@ def writeDBF(filePattern, fullFilePath, dicInput):
 						rec.hqzqjc = vList[0].decode("utf8")
 						# rec.hqzqjc = vList[0]
 						rec.hqzrsp = vList[1]; rec.hqjrkp = vList[2]; rec.hqzjcj = vList[3];
-						rec.hqcjsl = vList[4]; rec.hqcjje = vList[5]; rec.hqcjbs = vList[6];
+						rec.hqcjbs = vList[6];
 						rec.hqzgcj = vList[7]; rec.hqzdcj = vList[8]; rec.hqsyl1 = vList[9];
 						rec.hqsyl2 = vList[10]; rec.hqjsd1 = vList[11]; rec.hqjsd2 = vList[12];
 						rec.hqhycc = vList[13]; rec.hqsjw5 = vList[14]; rec.hqssl5 = vList[15];
@@ -339,6 +373,22 @@ def writeDBF(filePattern, fullFilePath, dicInput):
 						rec.hqbsl1 = vList[25]; rec.hqbjw2 = vList[26]; rec.hqbsl2 = vList[27];
 						rec.hqbjw3 = vList[28]; rec.hqbsl3 = vList[29]; rec.hqbjw4 = vList[30];
 						rec.hqbsl4 = vList[31]; rec.hqbjw5 = vList[32]; rec.hqbsl5 = vList[33];
+
+						#399002的總價、量由395001來取代
+						if key != "399002":
+							rec.hqcjsl = vList[4]; #交易量
+							rec.hqcjje = vList[5]; #總價金
+
+						if key == "395001":
+							locate399002 = dbfFileIndex.search(match="399002");
+							if len(locate399002) > 0:
+								with locate399002[0] as rec399002:
+									rec399002.hqcjsl = vList[4];
+									rec399002.hqcjje = vList[5];
+
+			# 僅log 上証指數 及 深圳成指
+			if (filePattern == "0" and key == "000001") or (filePattern == "1" and key == "399001"):
+				logger.debug(key + " " + value);
 
 	dtWriteDBFEnd = datetime.datetime.now()
 
@@ -350,8 +400,8 @@ def writeDBF(filePattern, fullFilePath, dicInput):
 	# print writeMax
 	# if dtDelta > writeMax or dtDelta > 10 * 1000:
 	# writeMax = dtDelta
-	logger.debug("write count : " + str(insertCount) + "/" + str(updateCount))
-	logger.debug("write DBF end (" + str(dtWriteDBFEnd - dtWriteDBFStart) + ")")
+	logger.info("write count : " + str(insertCount) + "/" + str(updateCount))
+	logger.info("write DBF end (" + str(dtWriteDBFEnd - dtWriteDBFStart) + ")")
 	# dbfFileHandle.close()
 	# dbfFileHandle = None
 
@@ -379,6 +429,9 @@ def readDBF(filePattern, fullFilePath, redisServer):
 				#key不存在或與最後一筆不相符則更新
 				with redisServer.pipeline() as pipe:
 					for i in range(len(keyList)):
+						if keyList[i] == "": #key是空的情形下，不進redis
+							continue;
+
 						if lastValueList[i] == None or lastValueList[i].decode("utf8") != valueList[i]:
 						# if True:
 							pipe.set(keyList[i], valueList[i])
@@ -411,39 +464,38 @@ def readDBF(filePattern, fullFilePath, redisServer):
 					currKey = rec.s1
 					#920ms
 					# 三種取出欄位值的方式(rec["s3"], rec[2], rec.s3)，以rec.s3的效率最佳
-					# currValue = (u"%s##%.3f##%.3f##%d##%.3f##%.3f##%.3f##%.3f##%.3f##%d##%.3f##%d"
-					# 		"##%.3f##%d##%.3f##%d##%d##%.3f##%d##%.3f##%d##%.3f##%d##%.3f##%d"
-					# 		"##%.3f##%d##%.3f##%d") % (getStrFieldValue("s2", "cp936"),
-					# 	rec.s3, rec.s4, rec.s5, rec.s6, rec.s7, rec.s8, rec.s9, rec.s10, 
-					# 	rec.s11, rec.s13, rec.s15, rec.s16, rec.s17, rec.s18, rec.s19, rec.s21, 
-					# 	rec.s22, rec.s23, rec.s24, rec.s25, rec.s26, rec.s27, rec.s28, rec.s29, 
-					# 	rec.s30, rec.s31, rec.s32, rec.s33)
+					currValue = (u"%s##%.3f##%.3f##%d##%.3f##%.3f##%.3f##%.3f##%.3f##%d##%.3f##%d"
+							"##%.3f##%d##%.3f##%d##%d##%.3f##%d##%.3f##%d##%.3f##%d##%.3f##%d"
+							"##%.3f##%d##%.3f##%d") % (getStrFieldValue("s2", "cp936"),
+						rec.s3, rec.s4, rec.s5, rec.s6, rec.s7, rec.s8, rec.s9, rec.s10, 
+						rec.s11, rec.s13, rec.s15, rec.s16, rec.s17, rec.s18, rec.s19, rec.s21, 
+						rec.s22, rec.s23, rec.s24, rec.s25, rec.s26, rec.s27, rec.s28, rec.s29, 
+						rec.s30, rec.s31, rec.s32, rec.s33)
 					# print currValue
 
-					# print repr(rec)
-					recList = repr(rec).split()
-					del recList[0]
-					if len(recList) == 27:
-						recList.insert(9, "0.000")
-					currValue = "##".join(recList)
-					currValue = (u"%s##%s") % (getStrFieldValue("s2", "cp936"), currValue)
+					# recList = repr(rec).split()
+					# del recList[0]
+					# if len(recList) == 27:
+					# 	recList.insert(9, "0.000")
+					# currValue = "##".join(recList)
+					# currValue = (u"%s##%s") % (getStrFieldValue("s2", "cp936"), currValue)
 					# print currValue
 				elif filePattern == "1":
 					currKey = rec.hqzqdm
-					# currValue = (u"%s##%.3f##%.3f##%.3f"
-					# 	"##%d##%.3f##%d##%.3f##%.3f##%.2f##%.2f##%.3f##%.3f##%d##%.3f"
-					# 	"##%d##%.3f##%d##%.3f##%d##%.3f##%d##%.3f##%d##%.3f##%d##%.3f"
-					# 	"##%d##%.3f##%d##%.3f##%d##%.3f##%d") % (getStrFieldValue("hqzqjc", "cp936"), 
-					# 	rec.hqzrsp, rec.hqjrkp, rec.hqzjcj, rec.hqcjsl, rec.hqcjje, rec.hqcjbs, 
-					# 	rec.hqzgcj, rec.hqzdcj, rec.hqsyl1, rec.hqsyl2, rec.hqjsd1, rec.hqjsd2, 
-					# 	rec.hqhycc, rec.hqsjw5, rec.hqssl5, rec.hqsjw4, rec.hqssl4, rec.hqsjw3, 
-					# 	rec.hqssl3, rec.hqsjw2, rec.hqssl2, rec.hqsjw1, rec.hqssl1, rec.hqbjw1, 
-					# 	rec.hqbsl1, rec.hqbjw2, rec.hqbsl2, rec.hqbjw3, rec.hqbsl3, rec.hqbjw4, 
-					# 	rec.hqbsl4, rec.hqbjw5, rec.hqbsl5)
+					currValue = (u"%s##%.3f##%.3f##%.3f"
+						"##%d##%.3f##%d##%.3f##%.3f##%.2f##%.2f##%.3f##%.3f##%d##%.3f"
+						"##%d##%.3f##%d##%.3f##%d##%.3f##%d##%.3f##%d##%.3f##%d##%.3f"
+						"##%d##%.3f##%d##%.3f##%d##%.3f##%d") % (getStrFieldValue("hqzqjc", "cp936"), 
+						rec.hqzrsp, rec.hqjrkp, rec.hqzjcj, rec.hqcjsl, rec.hqcjje, rec.hqcjbs, 
+						rec.hqzgcj, rec.hqzdcj, rec.hqsyl1, rec.hqsyl2, rec.hqjsd1, rec.hqjsd2, 
+						rec.hqhycc, rec.hqsjw5, rec.hqssl5, rec.hqsjw4, rec.hqssl4, rec.hqsjw3, 
+						rec.hqssl3, rec.hqsjw2, rec.hqssl2, rec.hqsjw1, rec.hqssl1, rec.hqbjw1, 
+						rec.hqbsl1, rec.hqbjw2, rec.hqbsl2, rec.hqbjw3, rec.hqbsl3, rec.hqbjw4, 
+						rec.hqbsl4, rec.hqbjw5, rec.hqbsl5)
 
-					recList = repr(rec).split()
-					del recList[0]
-					currValue = "##".join(recList)
+					# recList = repr(rec).split()
+					# del recList[0]
+					# currValue = "##".join(recList)
 					# currValue = (u"%s##%s") % (getStrFieldValue("hqzqjc", "cp936"), currValue)
 			except:
 				logger.error("get record fail " + str(sys.exc_info()[0]) + " key = " + currKey)
